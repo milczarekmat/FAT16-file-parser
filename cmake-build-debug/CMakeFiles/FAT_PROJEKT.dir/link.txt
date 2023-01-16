@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/FAT_PROJEKT.dir/main.c.o CMakeFiles/FAT_PROJEKT.dir/file_reader.c.o -o FAT_PROJEKT  -lm 
