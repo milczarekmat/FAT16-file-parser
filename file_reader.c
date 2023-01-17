@@ -263,7 +263,7 @@ void get_chain_fat16(struct file_t* file, const void* const buffer,
     if (current_cluster >= LAST_CLUSTER || current_cluster == 0){
         return;
     }
-    while (fat_table[current_cluster] != terminator){
+    while (1){
         uint16_t* temp = realloc(file->clusters, (file->clusters_number + 1) * sizeof(uint16_t));
         if (!temp){
             free(file->clusters);
@@ -273,12 +273,15 @@ void get_chain_fat16(struct file_t* file, const void* const buffer,
         file->clusters = temp;
         file->clusters[file->clusters_number] = current_cluster;
 
+        file->clusters_number++;
+        if (fat_table[current_cluster] == terminator){
+            break;
+        }
         current_cluster = fat_table[current_cluster];
         if (current_cluster >= LAST_CLUSTER || current_cluster == 0){
             file->clusters_number++;
             break;
         }
-        file->clusters_number++;
     }
     file->clusters_size_in_bytes = file->clusters_number *
                                    (file->volume->psuper->sectors_per_cluster * file->volume->psuper->bytes_per_sector);
