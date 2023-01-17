@@ -168,34 +168,6 @@ int fat_close(struct volume_t* pvolume){
     return 0;
 }
 
-void create_formatted_entry(struct dir_entry_t *entry, struct entry_formatted_t* entry_formatted){
-    (entry->attrib & FAT_ATTRIB_DIRECTORY) != 0 ? (entry_formatted->is_directory = 1) : (entry_formatted->is_directory = 0);
-    (entry->attrib & FAT_ATTRIB_HIDDEN) != 0 ? (entry_formatted->is_hidden = 1) : (entry_formatted->is_hidden = 0);
-    (entry->attrib & FAT_ATTRIB_READ_ONLY) != 0 ? (entry_formatted->is_readonly = 1) : (entry_formatted->is_readonly = 0);
-    (entry->attrib & FAT_ATTRIB_SYSTEM) != 0 ? (entry_formatted->is_system = 1) : (entry_formatted->is_system = 0);
-    (entry->attrib & FAT_ATTRIB_ARCHIVE) != 0 ? (entry_formatted->is_archived = 1) : (entry_formatted->is_archived = 0);
-    (entry->attrib & FAT_ATTRIB_VOLUME_LABEL) != 0 ? (entry_formatted->is_volume_label = 1) : (entry_formatted->is_volume_label = 0);
-    size_t length = 0;
-    for ( ; length < SIZE_OF_FILENAME; length++){
-        if (entry->filename[length] == ' '){
-            break;
-        }
-    }
-    strncpy(entry_formatted->name, entry->filename, length);
-    entry_formatted->name[length] = '\0';
-    if (entry->ext[0] != ' ') {
-        entry_formatted->name[length] = '.';
-        entry_formatted->name[length + 1] = '\0';
-        length = 0;
-        for (; length < SIZE_OF_EXTENSION; length++) {
-            if (entry->ext[length] == ' ') {
-                break;
-            }
-        }
-        strncat(entry_formatted->name, entry->ext, length);
-    }
-}
-
 void fill_entry_structure(struct dir_entry_t *entry){
     (entry->attrib & FAT_ATTRIB_DIRECTORY) != 0 ? (entry->is_directory = 1) : (entry->is_directory = 0);
     (entry->attrib & FAT_ATTRIB_HIDDEN) != 0 ? (entry->is_hidden = 1) : (entry->is_hidden = 0);
@@ -236,20 +208,20 @@ struct file_t* find_file_entry(struct volume_t* volume, const char* filename){
         return NULL;
     }
 
-    struct entry_formatted_t* entry_formatted = malloc(sizeof(struct entry_formatted_t));
-    if (!entry_formatted){
+    struct dir_entry_t* entry = malloc(sizeof(struct dir_entry_t));
+    if (!entry){
         errno = ENOMEM;
         free(dir_structure);
         return NULL;
     }
     for (int i=0; i<volume->psuper->root_dir_capacity; i++){
-        struct dir_entry_t* entry = (struct dir_entry_t*)((uint8_t*)dir_structure + i*SIZE_OF_DIRECTORY_ENTRY);
-        create_formatted_entry(entry, entry_formatted);
-        if (!strcmp(filename, entry_formatted->name)){
-            if (entry_formatted->is_directory || entry_formatted->is_volume_label){
+        memcpy(entry, dir_structure + i * SIZE_OF_DIRECTORY_ENTRY, SIZE_OF_DIRECTORY_ENTRY);
+        fill_entry_structure(entry);
+        if (!strcmp(filename, entry->name)){
+            if (entry->is_directory || entry->is_volume_label){
                 errno = EISDIR;
                 free(dir_structure);
-                free(entry_formatted);
+                free(entry);
                 return NULL;
             }
 
@@ -257,25 +229,25 @@ struct file_t* find_file_entry(struct volume_t* volume, const char* filename){
             if (!file){
                 errno = ENOMEM;
                 free(dir_structure);
-                free(entry_formatted);
+                free(entry);
                 return NULL;
             }
 
             file->first_cluster_index = entry->low_cluster_index;
-            strncpy(file->filename, entry_formatted->name, 12);
+            strncpy(file->filename, entry->name, 12);
             file->current_position = 0;
             file->current_cluster = 0;
             file->current_position_in_cluster = 0;
             file->volume = volume;
             file->file_size = entry->size;
             free(dir_structure);
-            free(entry_formatted);
+            free(entry);
             return file;
         }
     }
     errno = ENOENT;
     free(dir_structure);
-    free(entry_formatted);
+    free(entry);
     return NULL;
 }
 
@@ -462,7 +434,6 @@ struct dir_t* dir_open(struct volume_t* pvolume, const char* dir_path){
     }
     strcpy(dir->name, "\\");
     dir->volume = pvolume;
-    dir->first_cluster_index = pvolume->dir_position;
     dir->founded_elements = 0;
 
     return dir;
@@ -485,7 +456,7 @@ int dir_read(struct dir_t* pdir, struct dir_entry_t* pentry){
     unsigned int element_number = 0;
     for (int i=0; i<pdir->volume->psuper->root_dir_capacity; i++){
         memcpy(pentry, root + i*SIZE_OF_DIRECTORY_ENTRY, SIZE_OF_DIRECTORY_ENTRY);
-        if (pentry->filename[0] == (char)0xe5 || pentry->filename[0] == (char)0x00){
+        if (pentry->filename[0] == FAT_DELETED || pentry->filename[0] == (char)0x00){
             continue;
         }
         fill_entry_structure(pentry);

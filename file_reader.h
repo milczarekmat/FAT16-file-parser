@@ -114,18 +114,6 @@ struct dir_entry_t{
     uint8_t is_volume_label : 1; //- wartość atrybutu: katalog (0 lub 1).
 }__attribute__(( packed ));
 
-struct entry_formatted_t{
-    char name[12]; // - nazwa pliku/katalogu bez nadmiarowych spacji oraz z kropką separującą nazwę od rozszerzenia,
-    struct date_t creation_date;
-    struct time_t creation_time;
-    uint8_t is_archived : 1; // - wartość atrybutu: plik zarchiwizowany (0 lub 1),
-    uint8_t is_readonly : 1; // - wartość atrybutu: plik tylko do odczytu (0 lub 1),
-    uint8_t is_system : 1; // - wartość atrybutu: plik jest systemowy (0 lub 1),
-    uint8_t is_hidden : 1; // - wartość atrybutu: plik jest ukryty (0 lub 1),
-    uint8_t is_directory : 1; //- wartość atrybutu: katalog (0 lub 1).
-    uint8_t is_volume_label : 1; //- wartość atrybutu: katalog (0 lub 1).
-}__attribute__(( packed ));
-
 struct file_t{
     struct volume_t* volume;
     char filename[11];
@@ -142,21 +130,12 @@ struct file_t{
 struct dir_t{
     struct volume_t* volume;
     char name[11];
-    cluster_t first_cluster_index;
     unsigned int founded_elements;
-    //uint32_t clusters_size_in_bytes;
-    //int32_t current_position;
-    //int16_t current_position_in_cluster;
-    //cluster_t current_cluster;
-    //uint16_t *clusters;
-    //size_t clusters_number;
-    //uint32_t directory_size;
 };
 
 void get_chain_fat16(struct file_t* file, const void* const buffer,
                      uint16_t first_cluster);
 
-void create_formatted_entry(struct dir_entry_t *entry, struct entry_formatted_t* entry_formatted);
 void fill_entry_structure(struct dir_entry_t *entry);
 uint16_t* get_fat_table(struct volume_t* volume);
 
