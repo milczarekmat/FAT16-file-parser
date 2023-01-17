@@ -30,7 +30,7 @@ int disk_read(struct disk_t* pdisk, int32_t first_sector, void* buffer, int32_t 
         errno = EFAULT;
         return -1;
     }
-    if ((lba_t)first_sector + sectors_to_read >= pdisk->disk_size){
+    if ((lba_t)first_sector + sectors_to_read > pdisk->disk_size){
         errno = ERANGE;
         return -1;
     }
@@ -88,9 +88,6 @@ struct volume_t* fat_open(struct disk_t* pdisk, uint32_t first_sector){
     volume->volume_start = first_sector;
     volume->volume_size = volume->psuper->logical_sectors16 == 0 ?
                           volume->psuper->logical_sectors32 : volume->psuper->logical_sectors16;
-    volume->user_space = volume->volume_size - volume->psuper->reserved_sectors -
-                         volume->psuper->fat_count * volume->psuper->sectors_per_fat - volume->psuper->root_dir_capacity;
-    volume->total_clusters = volume->user_space / volume->psuper->sectors_per_cluster;
     volume->dir_position = volume->volume_start  + volume->psuper->reserved_sectors +
                            volume->psuper->fat_count * volume->psuper->sectors_per_fat;
     assert(volume->volume_size <= pdisk->disk_size);
@@ -347,7 +344,8 @@ size_t file_read(void *ptr, size_t size, size_t nmemb, struct file_t *stream){
         return -1;
     }
 
-    size_t readed_elements = 0;
+    int readed_elements = 0;
+    int byte_offset = 0;
     uint32_t bytes_to_read = size * nmemb > stream->file_size ? stream->file_size : size * nmemb;
     uint16_t cluster_to_read = ceil((double)bytes_to_read / (double)stream->volume->bytes_per_cluster);
     if (stream->current_position >= (int32_t )stream->file_size){
@@ -373,9 +371,23 @@ size_t file_read(void *ptr, size_t size, size_t nmemb, struct file_t *stream){
             memcpy((uint8_t*)ptr + readed_elements * size, cluster_data + stream->current_position_in_cluster, remaining_bytes_in_file);
             remaining_elements_in_cluster = 0;
         }
+        uint16_t remaining_bytes_in_current_cluster = stream->volume->bytes_per_cluster - stream->current_position_in_cluster;
+        if (size > remaining_bytes_in_current_cluster){
+            memcpy((uint8_t*)ptr + readed_elements * size, cluster_data + stream->current_position_in_cluster, remaining_bytes_in_current_cluster);
+            byte_offset = remaining_bytes_in_current_cluster;
+            file_seek(stream, remaining_bytes_in_current_cluster, SEEK_CUR);
+            cluster_real_index = stream->clusters[stream->current_cluster] - 2;
+            file_current_position = stream->volume->data_cluster_2 +
+                                    cluster_real_index * stream->volume->psuper->sectors_per_cluster;
+            if (disk_read(stream->volume->disk, file_current_position, cluster_data,
+                          stream->volume->psuper->sectors_per_cluster) == -1){
+                return -1;
+            }
+        }
         for (size_t j=0; j < remaining_elements_in_cluster; j++) {
-            memcpy((uint8_t*)ptr + readed_elements++ * size, cluster_data + stream->current_position_in_cluster, size);
-            file_seek(stream, size, SEEK_CUR);
+            memcpy((uint8_t*)ptr + readed_elements * size +byte_offset, cluster_data + stream->current_position_in_cluster, size-byte_offset);
+            file_seek(stream, size-byte_offset, SEEK_CUR);
+            readed_elements++;
         }
     }
 

@@ -19,18 +19,6 @@
 typedef uint32_t lba_t; // sektory
 typedef uint32_t cluster_t; // klastry
 
-struct date_t{
-    unsigned int day;
-    unsigned int month;
-    unsigned int year;
-};
-
-struct time_t{
-    unsigned int hour;
-    unsigned int minute;
-    unsigned int second;
-};
-
 enum attribs_t{
     FAT_ATTRIB_READ_ONLY = 0x01,
     FAT_ATTRIB_HIDDEN = 0x02,
@@ -46,7 +34,7 @@ struct disk_t{
 };
 
 struct fat_super_t {
-    uint8_t __jump_code[3];
+    uint8_t _jump_code[3];
     char oem_name[8];
 
     uint16_t bytes_per_sector;
@@ -55,23 +43,23 @@ struct fat_super_t {
     uint8_t fat_count;
     uint16_t root_dir_capacity;
     uint16_t logical_sectors16;
-    uint8_t __reserved;
+    uint8_t _reserved;
     uint16_t sectors_per_fat;
 
-    uint32_t __reserved2;
+    uint32_t _reserved2;
 
     uint32_t hidden_sectors;
     uint32_t logical_sectors32;
 
-    uint16_t __reserved3;
-    uint8_t __reserved4;
+    uint16_t _reserved3;
+    uint8_t _reserved4;
 
     uint32_t serial_number;
 
     char label[11];
-    char fsid[8];
+    char fid[8];
 
-    uint8_t __boot_code[448];
+    uint8_t _boot_code[448];
     uint16_t validate_num; // 55 aa
 } __attribute__(( packed ));
 
@@ -79,8 +67,6 @@ struct volume_t{
     struct disk_t* disk;
     struct fat_super_t* psuper;
     lba_t volume_size;
-    lba_t user_space;
-    cluster_t total_clusters;
     lba_t volume_start;
     lba_t* fat_positions;
     lba_t dir_position;
@@ -104,8 +90,6 @@ struct dir_entry_t{
     uint32_t size;
     //***//
     char name[12];
-    struct date_t creation_date;
-    struct time_t creation_time;
     uint8_t is_archived : 1; // - wartość atrybutu: plik zarchiwizowany (0 lub 1),
     uint8_t is_readonly : 1; // - wartość atrybutu: plik tylko do odczytu (0 lub 1),
     uint8_t is_system : 1; // - wartość atrybutu: plik jest systemowy (0 lub 1),
@@ -152,7 +136,6 @@ struct file_t* file_open(struct volume_t* pvolume, const char* file_name);
 int file_close(struct file_t* stream);
 size_t file_read(void *ptr, size_t size, size_t nmemb, struct file_t *stream);
 int32_t file_seek(struct file_t* stream, int32_t offset, int whence);
-
 
 struct dir_t* dir_open(struct volume_t* pvolume, const char* dir_path);
 int dir_read(struct dir_t* pdir, struct dir_entry_t* pentry);
