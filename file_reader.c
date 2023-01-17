@@ -70,7 +70,6 @@ struct volume_t* fat_open(struct disk_t* pdisk, uint32_t first_sector){
     volume->psuper = malloc(sizeof(struct fat_super_t));
     if (!volume->psuper){
         errno = ENOMEM;
-/*        free(volume);*/
         fat_close(volume);
         return NULL;
     }
@@ -82,8 +81,6 @@ struct volume_t* fat_open(struct disk_t* pdisk, uint32_t first_sector){
 
     if (volume->psuper->validate_num != 0xAA55){
         errno = EINVAL;
-/*        free(volume->psuper);
-        free(volume);*/
         fat_close(volume);
         return NULL;
     }
@@ -107,8 +104,6 @@ struct volume_t* fat_open(struct disk_t* pdisk, uint32_t first_sector){
     volume->fat_positions = calloc(volume->psuper->fat_count, sizeof(lba_t));
     if (!volume->fat_positions){
         errno = ENOMEM;
-        /*free(volume->psuper);
-        free(volume);*/
         fat_close(volume);
         return NULL;
     }
@@ -173,7 +168,7 @@ int fat_close(struct volume_t* pvolume){
     return 0;
 }
 
-void fill_entry_structure(struct dir_entry_t *entry, struct entry_formatted_t* entry_formatted){
+void create_formatted_entry(struct dir_entry_t *entry, struct entry_formatted_t* entry_formatted){
     (entry->attrib & FAT_ATTRIB_DIRECTORY) != 0 ? (entry_formatted->is_directory = 1) : (entry_formatted->is_directory = 0);
     (entry->attrib & FAT_ATTRIB_HIDDEN) != 0 ? (entry_formatted->is_hidden = 1) : (entry_formatted->is_hidden = 0);
     (entry->attrib & FAT_ATTRIB_READ_ONLY) != 0 ? (entry_formatted->is_readonly = 1) : (entry_formatted->is_readonly = 0);
@@ -199,7 +194,34 @@ void fill_entry_structure(struct dir_entry_t *entry, struct entry_formatted_t* e
         }
         strncat(entry_formatted->name, entry->ext, length);
     }
-    // todo time
+}
+
+void fill_entry_structure(struct dir_entry_t *entry){
+    (entry->attrib & FAT_ATTRIB_DIRECTORY) != 0 ? (entry->is_directory = 1) : (entry->is_directory = 0);
+    (entry->attrib & FAT_ATTRIB_HIDDEN) != 0 ? (entry->is_hidden = 1) : (entry->is_hidden = 0);
+    (entry->attrib & FAT_ATTRIB_READ_ONLY) != 0 ? (entry->is_readonly = 1) : (entry->is_readonly = 0);
+    (entry->attrib & FAT_ATTRIB_SYSTEM) != 0 ? (entry->is_system = 1) : (entry->is_system = 0);
+    (entry->attrib & FAT_ATTRIB_ARCHIVE) != 0 ? (entry->is_archived = 1) : (entry->is_archived = 0);
+    (entry->attrib & FAT_ATTRIB_VOLUME_LABEL) != 0 ? (entry->is_volume_label = 1) : (entry->is_volume_label = 0);
+    size_t length = 0;
+    for ( ; length < SIZE_OF_FILENAME; length++){
+        if (entry->filename[length] == ' '){
+            break;
+        }
+    }
+    strncpy(entry->name, entry->filename, length);
+    entry->name[length] = '\0';
+    if (entry->ext[0] != ' ') {
+        entry->name[length] = '.';
+        entry->name[length + 1] = '\0';
+        length = 0;
+        for (; length < SIZE_OF_EXTENSION; length++) {
+            if (entry->ext[length] == ' ') {
+                break;
+            }
+        }
+        strncat(entry->name, entry->ext, length);
+    }
 }
 
 struct file_t* find_file_entry(struct volume_t* volume, const char* filename){
@@ -222,7 +244,7 @@ struct file_t* find_file_entry(struct volume_t* volume, const char* filename){
     }
     for (int i=0; i<volume->psuper->root_dir_capacity; i++){
         struct dir_entry_t* entry = (struct dir_entry_t*)((uint8_t*)dir_structure + i*SIZE_OF_DIRECTORY_ENTRY);
-        fill_entry_structure(entry, entry_formatted);
+        create_formatted_entry(entry, entry_formatted);
         if (!strcmp(filename, entry_formatted->name)){
             if (entry_formatted->is_directory || entry_formatted->is_volume_label){
                 errno = EISDIR;
@@ -282,15 +304,11 @@ void get_chain_fat16(struct file_t* file, const void* const buffer,
         file->clusters = temp;
         file->clusters[file->clusters_number] = current_cluster;
 
-        //int next_cluster = current_cluster + 1;
         current_cluster = fat_table[current_cluster];
         if (current_cluster >= LAST_CLUSTER || current_cluster == 0){
             file->clusters_number++;
             break;
         }
-/*        if (current_cluster == 0x0){
-            current_cluster = next_cluster;
-        }*/
         file->clusters_number++;
     }
     file->clusters_size_in_bytes = file->clusters_number *
@@ -385,7 +403,6 @@ size_t file_read(void *ptr, size_t size, size_t nmemb, struct file_t *stream){
         }
         for (size_t j=0; j < remaining_elements_in_cluster; j++) {
             memcpy((uint8_t*)ptr + readed_elements++ * size, cluster_data + stream->current_position_in_cluster, size);
-            // TODO sprawdzac wartosc file_seek?
             file_seek(stream, size, SEEK_CUR);
         }
     }
@@ -443,14 +460,56 @@ struct dir_t* dir_open(struct volume_t* pvolume, const char* dir_path){
     if (!dir){
         errno = ENOMEM;
     }
+    strcpy(dir->name, "\\");
+    dir->volume = pvolume;
+    dir->first_cluster_index = pvolume->dir_position;
+    dir->founded_elements = 0;
 
     return dir;
 }
 
 int dir_read(struct dir_t* pdir, struct dir_entry_t* pentry){
-    return 0;
+    if (!pdir || !pentry){
+        errno = EFAULT;
+        return -1;
+    }
+    uint8_t* root = malloc(pdir->volume->sectors_per_dir * pdir->volume->psuper->bytes_per_sector);
+    if (!root){
+        errno = ENOMEM;
+        return -1;
+    }
+    if (disk_read(pdir->volume->disk, pdir->volume->dir_position, root, pdir->volume->sectors_per_dir) == -1){
+        free(root);
+        return -1;
+    }
+    unsigned int element_number = 0;
+    for (int i=0; i<pdir->volume->psuper->root_dir_capacity; i++){
+        memcpy(pentry, root + i*SIZE_OF_DIRECTORY_ENTRY, SIZE_OF_DIRECTORY_ENTRY);
+        if (pentry->filename[0] == (char)0xe5 || pentry->filename[0] == (char)0x00){
+            continue;
+        }
+        fill_entry_structure(pentry);
+        if (pentry->is_volume_label){
+            continue;
+        }
+        element_number++;
+        if (element_number <= pdir->founded_elements){
+            continue;
+        }
+        pdir->founded_elements++;
+        free(root);
+        return 0;
+    }
+
+    free(root);
+    return 1;
 }
 
 int dir_close(struct dir_t* pdir){
+    if (!pdir){
+        errno = EFAULT;
+        return -1;
+    }
+    free(pdir);
     return 0;
 }
