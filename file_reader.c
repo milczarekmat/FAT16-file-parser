@@ -76,6 +76,7 @@ struct volume_t* fat_open(struct disk_t* pdisk, uint32_t first_sector){
 
 
     if (disk_read(pdisk, volume->volume_start, volume->psuper, sizeof(struct fat_super_t)/BYTES_PER_SECTOR) == -1){
+        free(volume);
         return NULL;
     }
 
@@ -125,6 +126,8 @@ int check_if_fats_table_are_the_same(struct disk_t* pdisk, struct volume_t* volu
     uint8_t* second_fat_table = malloc(volume->psuper->sectors_per_fat * volume->psuper->bytes_per_sector);
     if (!first_fat_table || !second_fat_table){
         errno = ENOMEM;
+        free(first_fat_table);
+        free(second_fat_table);
         fat_close(volume);
         return -1;
     }
@@ -231,7 +234,7 @@ struct file_t* find_file_entry(struct volume_t* volume, const char* filename){
             }
 
             file->first_cluster_index = entry->low_cluster_index;
-            strncpy(file->filename, entry->name, 12);
+            strncpy(file->filename, entry->name, 11);
             file->current_position = 0;
             file->current_cluster = 0;
             file->current_position_in_cluster = 0;
@@ -446,6 +449,7 @@ struct dir_t* dir_open(struct volume_t* pvolume, const char* dir_path){
     struct dir_t* dir = malloc(sizeof(struct dir_t));
     if (!dir){
         errno = ENOMEM;
+        return NULL;
     }
     strcpy(dir->name, "\\");
     dir->volume = pvolume;
