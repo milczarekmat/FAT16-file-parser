@@ -9,5 +9,6 @@ int main() {
     dir_close(NULL);
     fat_open(NULL, 0);
     disk_open_from_file(NULL);
+    disk_close(NULL);
     return 0;
 }
